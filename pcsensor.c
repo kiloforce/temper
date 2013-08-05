@@ -28,6 +28,8 @@
 #define INTERFACE2 (0x01)
 #define SUPPORTED_DEVICES (2)
 
+
+
 const static unsigned short vendor_id[] = { 
 	0x1130,
 	0x0c45
@@ -65,6 +67,7 @@ static int device_type(usb_dev_handle *lvr_winusb){
 	return -1;
 }
 
+
 static int usb_detach(usb_dev_handle *lvr_winusb, int iInterface) {
 	int ret;
  
@@ -89,11 +92,12 @@ static int usb_detach(usb_dev_handle *lvr_winusb, int iInterface) {
 	return ret;
 } 
 
-static usb_dev_handle *find_lvr_winusb() {
+int find_lvr_winusbs(usb_dev_handle* handle_list[]) {
  
 	struct usb_bus *bus;
 	struct usb_device *dev;
 	int i;
+	int handle_list_size = 0;
  
 	for (bus = usb_busses; bus; bus = bus->next) {
 		for (dev = bus->devices; dev; dev = dev->next) {
@@ -109,18 +113,28 @@ static usb_dev_handle *find_lvr_winusb() {
 						if(debug){
 							printf("Could not open USB device\n");
 						}
-						return NULL;
+					} else {
+						if (handle_list_size < MAX_TEMPER_DEVICES) {
+							handle_list[handle_list_size] = handle;
+							handle_list_size++;
+						} else {
+							printf("Warning: Exceeded %d max device limit!", MAX_TEMPER_DEVICES);
+						}
 					}
-					return handle;
 				}
 			}
 		}
 	}
-	return NULL;
+	if(handle_list_size > 0) {
+		return 1;
+	} else {
+		return 0;
+	}
 }
 
-static usb_dev_handle* setup_libusb_access() {
+int setup_libusb_access(usb_dev_handle *handle_list[]) {
 	usb_dev_handle *lvr_winusb;
+	int handle_counter;
 
 	if(debug) {
 		usb_set_debug(255);
@@ -131,45 +145,47 @@ static usb_dev_handle* setup_libusb_access() {
 	usb_find_busses();
 	usb_find_devices();
 
- 
-	if(!(lvr_winusb = find_lvr_winusb())) {
+ 	if(!find_lvr_winusbs(handle_list)) {
 		if(debug){
 			printf("Couldn't find the USB device, Exiting\n");
 		}
-		return NULL;
+		return -1;
 	}
-        
-        
-	usb_detach(lvr_winusb, INTERFACE1);
-        
 
-	usb_detach(lvr_winusb, INTERFACE2);
-        
- 
-	if (usb_set_configuration(lvr_winusb, 0x01) < 0) {
-		if(debug){
-			printf("Could not set configuration 1\n");
-		}
-		return NULL;
-	}
- 
+ 	for(handle_counter = 0 ; handle_counter < MAX_TEMPER_DEVICES ; handle_counter++) {
+ 		lvr_winusb = handle_list[handle_counter];
+ 		if(lvr_winusb == NULL) continue;
 
-	// Microdia tiene 2 interfaces
-	if (usb_claim_interface(lvr_winusb, INTERFACE1) < 0) {
-		if(debug){
-			printf("Could not claim interface\n");
+ 		
+        
+		usb_detach(lvr_winusb, INTERFACE1);
+		usb_detach(lvr_winusb, INTERFACE2);
+	        
+	 
+		if (usb_set_configuration(lvr_winusb, 0x01) < 0) {
+			if(debug){
+				printf("Could not set configuration 1\n");
+			}
+			handle_list[handle_counter] = NULL;
 		}
-		return NULL;
-	}
- 
-	if (usb_claim_interface(lvr_winusb, INTERFACE2) < 0) {
-		if(debug){
-			printf("Could not claim interface\n");
+	 
+	
+		// Microdia tiene 2 interfaces
+		if (usb_claim_interface(lvr_winusb, INTERFACE1) < 0) {
+			if(debug){
+				printf("Could not claim interface\n");
+			}
+			handle_list[handle_counter] = NULL;
 		}
-		return NULL;
+	 
+		if (usb_claim_interface(lvr_winusb, INTERFACE2) < 0) {
+			if(debug){
+				printf("Could not claim interface\n");
+			}
+			handle_list[handle_counter] = NULL;
+		}
 	}
- 
-	return lvr_winusb;
+	return 1;
 }
  
 static int ini_control_transfer(usb_dev_handle *dev) {
@@ -291,15 +307,10 @@ static int get_temperature(usb_dev_handle *dev, float *tempC){
 	return 0;
 }
 
-usb_dev_handle* pcsensor_open(){
-	usb_dev_handle *lvr_winusb = NULL;
+int pcsensor_open(usb_dev_handle *lvr_winusb) {
 	char buf[256];
 	int i, ret;
-
-	if (!(lvr_winusb = setup_libusb_access())) {
-		return NULL;
-	} 
-
+ 		
 	switch(device_type(lvr_winusb)){
 	case 0:
 		control_transfer(lvr_winusb, uCmd1 );
@@ -320,7 +331,7 @@ usb_dev_handle* pcsensor_open(){
 	case 1:
 		if (ini_control_transfer(lvr_winusb) < 0) {
 			fprintf(stderr, "Failed to ini_control_transfer (device_type 1)");
-			return NULL;
+			return -1;
 		}
       
 		control_transfer(lvr_winusb, uTemperatura );
@@ -338,7 +349,7 @@ usb_dev_handle* pcsensor_open(){
 	if(debug){
 		printf("device_type=%d\n", device_type(lvr_winusb));
 	}
-	return lvr_winusb;
+	return 1;
 }
 
 void pcsensor_close(usb_dev_handle* lvr_winusb){

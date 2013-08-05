@@ -52,9 +52,12 @@ static int get_temperature(usb_dev_handle *dev, float *tempC);
 
 */
 
-usb_dev_handle* pcsensor_open();
+int setup_libusb_access(usb_dev_handle *handle_list[]);
+
+int pcsensor_open(usb_dev_handle *lvr_winusb);
 
 void pcsensor_close(usb_dev_handle* lvr_winusb);
 
 float pcsensor_get_temperature(usb_dev_handle* lvr_winusb);
 
+#define MAX_TEMPER_DEVICES 10
